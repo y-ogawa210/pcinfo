@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>PC環境チェック（完全版）</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; }
+    table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+    th, td { border: 1px solid #ccc; padding: 8px; }
+    th { background: #f0f0f0; }
+
+    .safe { color: #0a8a0a; font-weight: bold; }
+    .warn { color: #e6a700; font-weight: bold; }
+    .danger { color: #d93025; font-weight: bold; }
+
+    .score-A { color: #0a8a0a; font-weight: bold; }
+    .score-B { color: #1a73e8; font-weight: bold; }
+    .score-C { color: #e6a700; font-weight: bold; }
+    .score-D { color: #d93025; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h1>PC環境チェック（完全版）</h1>
+
+  <table id="infoTable">
+    <tr>
+      <th>項目</th>
+      <th>このPCの状態</th>
+      <th>説明</th>
+      <th>危険度</th>
+      <th>理由</th>
+      <th>確認した方がいい状況</th>
+    </tr>
+  </table>
+
+  <div id="score" class="score"></div>
+  <div id="comment" class="comment"></div>
+
+  <script>
+    /* 危険度＋理由＋チェックタイミング */
+    function dangerLevel(key, rawValue) {
+      const value = parseFloat(rawValue);
+
+      switch (key) {
+        case "CPUコア数":
+          if (value >= 4) return ["安全", "safe", "4コア以上は現代のWebアプリに十分", "特になし"];
+          if (value >= 2) return ["許容", "warn", "2〜3コアは複数タブで重くなる可能性", "ブラウザが重い時"];
+          return ["危険", "danger", "1コアは最低要件を満たさない", "常に動作が重い時"];
+
+        case "メモリGB":
+          if (value >= 8) return ["安全", "safe", "8GB以上なら複数アプリも安定", "特になし"];
+          if (value >= 4) return ["許容", "warn", "4GBはタブを多く開くと不足", "タブを10個以上開く時"];
+          return ["危険", "danger", "2GB以下はブラウザだけで限界", "ページが固まる時"];
+
+        case "ダウンリンク速度":
+          if (value >= 10) return ["安全", "safe", "10Mbps以上なら動画・会議も快適", "特になし"];
+          if (value >= 3) return ["許容", "warn", "3〜10Mbpsは重いページで遅延", "Teamsが重い時"];
+          if (value >= 1) return ["注意", "warn", "1〜3Mbpsは画像が多いと遅い", "読み込みが遅い時"];
+          return ["危険", "danger", "1Mbps未満はタイムアウト多発", "Web会議が切れる時"];
+
+        case "RTT":
+          if (value <= 100) return ["安全", "safe", "100ms以下なら遅延を感じにくい", "特になし"];
+          if (value <= 300) return ["許容", "warn", "100〜300msは操作が遅く感じる", "クリック反応が遅い時"];
+          return ["危険", "danger", "300ms以上は操作が遅れる", "Web会議で音声が遅れる時"];
+
+        case "バッテリー残量":
+          const percent = parseInt(rawValue);
+          if (percent >= 50) return ["安全", "safe", "50%以上なら安定して作業可能", "特になし"];
+          if (percent >= 20) return ["許容", "warn", "20〜50%は長時間作業に不安", "外出先で作業する時"];
+          return ["危険", "danger", "20%未満は突然落ちる可能性", "会議中に電源がない時"];
+
+        default:
+          return ["-", "", "-", "-"];
+      }
+    }
+
+    /* 説明 */
+    const descriptions = {
+      "OS": "使用しているオペレーティングシステムです。",
+      "CPUコア数": "同時に処理できる作業数。少ないと動作が重くなります。",
+      "メモリGB": "アプリを同時に動かすための容量。少ないとフリーズしやすいです。",
+      "GPU": "画面描画や3D処理を行う装置。WebGL対応に影響します。",
+      "画面解像度": "画面の表示領域の広さです。",
+      "色深度": "色の表現力。低いと画像が粗く見えます。",
+      "ピクセル密度": "画面の精細さです。",
+      "オンライン状態": "インターネットに接続されているかどうか。",
+      "回線タイプ": "通信品質の目安（4g/3g/2g）。",
+      "ダウンリンク速度": "推定ダウンロード速度（Mbps）。低いと遅延が発生します。",
+      "RTT": "応答速度（ms）。高いと通信が遅く感じます。",
+      "セーブデータモード": "通信量節約モードのON/OFF。",
+      "バッテリー残量": "現在のバッテリー残量です。",
+      "充電中": "充電しているかどうか。",
+      "ブラウザUA": "使用中のブラウザ情報です。",
+      "言語設定": "ブラウザの言語設定です。",
+      "Cookie有効": "Cookieが使えるかどうか。",
+      "HTTPS": "通信が暗号化されているかどうか。",
+      "WebGL対応": "3D描画が可能かどうか。",
+    };
+
+    /* スコア判定（省略：前回と同じ） */
+    function judgeCPU(c){return c>=8?"A":c>=4?"B":c>=2?"C":"D";}
+    function judgeMemory(m){return m>=16?"A":m>=8?"B":m>=4?"C":"D";}
+    function judgeGPU(g){return g?"A":"C";}
+    function judgeNetwork(conn){
+      const t=conn.effectiveType||"unknown",d=conn.downlink||0,r=conn.rtt||9999;
+      if(t==="4g"&&d>=10&&r<=100)return"A";
+      if((t==="4g"||t==="3g")&&d>=3&&r<=300)return"B";
+      if((t==="3g"||t==="2g")&&d>=1)return"C";
+      return"D";
+    }
+    function calcTotalScore(s){if(s.includes("D"))return"D";const c={A:0,B:0,C:0};s.forEach(x=>c[x]++);return c.A>=3?"A":c.B>=2?"B":"C";}
+    function getComment(s){return{A:"非常に快適な環境です。",B:"一般的な業務は問題ありません。",C:"重い処理では遅くなる可能性があります。",D:"環境改善を検討してください。"}[s];}
+
+    /* 情報取得 */
+    async function getPCInfo(){
+      const b=await navigator.getBattery(),gl=document.createElement('canvas').getContext('webgl');
+      const dbg=gl.getExtension('WEBGL_debug_renderer_info');
+      const gpu=dbg?gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL):null;
+      const c=navigator.connection||{};
+      return{
+        OS:navigator.platform,
+        CPUコア数:navigator.hardwareConcurrency,
+        メモリGB:navigator.deviceMemory,
+        GPU:gpu||"取得不可",
+        画面解像度:`${screen.width} x ${screen.height}`,
+        色深度:`${screen.colorDepth} bit`,
+        ピクセル密度:devicePixelRatio,
+        オンライン状態:navigator.onLine?"オンライン":"オフライン",
+        回線タイプ:c.effectiveType||"不明",
+        ダウンリンク速度:c.downlink?c.downlink+" Mbps":"不明",
+        RTT:c.rtt?c.rtt+" ms":"不明",
+        セーブデータモード:c.saveData?"オン":"オフ",
+        バッテリー残量:`${Math.round(b.level*100)}%`,
+        充電中:b.charging?"はい":"いいえ",
+        ブラウザUA:navigator.userAgent,
+        言語設定:navigator.language,
+        Cookie有効:navigator.cookieEnabled?"はい":"いいえ",
+        HTTPS:location.protocol==="https:"?"はい":"いいえ",
+        WebGL対応:gl?"はい":"いいえ",
+      };
+    }
+
+    /* メイン処理 */
+    getPCInfo().then(info=>{
+      const table=document.getElementById('infoTable');
+
+      Object.entries(info).forEach(([key,value])=>{
+        const row=document.createElement('tr');
+        const [dangerText,dangerClass,reason,when]=dangerLevel(key,value);
+
+        row.innerHTML=`
+          <td>${key}</td>
+          <td>${value}</td>
+          <td>${descriptions[key]||"-"}</td>
+          <td class="${dangerClass}">${dangerText}</td>
+          <td>${reason}</td>
+          <td>${when}</td>
+        `;
+        table.appendChild(row);
+      });
+
+      const cpu=judgeCPU(info.CPUコア数);
+      const mem=judgeMemory(info.メモリGB);
+      const gpu=judgeGPU(info.GPU!=="取得不可");
+      const net=judgeNetwork(navigator.connection||{});
+      const total=calcTotalScore([cpu,mem,gpu,net]);
+
+      document.getElementById('score').innerHTML=
+        `総合診断スコア：<span class="score-${total}">${total}</span>`;
+
+      document.getElementById('comment').textContent=getComment(total);
+    });
+  </script>
+</body>
+</html>
